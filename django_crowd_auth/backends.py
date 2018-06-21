@@ -7,6 +7,7 @@ from django.contrib.auth.backends import ModelBackend
 
 from django_crowd_auth.client import Client
 from django_crowd_auth import user
+from requests.exceptions import ConnectionError
 
 
 LOGGER = logging.getLogger(__name__)
@@ -19,16 +20,23 @@ class Backend(ModelBackend):
     def authenticate(self, request, **credentials):
         """Authenticate an user.
         """
-        client = Client.from_settings()
-        remote_addr = request.META['REMOTE_ADDR']
 
-        if 'token' in credentials:
-            session = client.validate_session(
-                credentials['token'], remote_addr)
-        elif 'username' in credentials and 'password' in credentials:
-            session = client.get_session(
-                credentials['username'], credentials['password'], remote_addr)
-        else:
+        try:
+            client = Client.from_settings()
+            client.init_cookie_config()
+
+            remote_addr = request.META['REMOTE_ADDR']
+            if 'token' in credentials:
+                session = client.validate_session(
+                    credentials['token'], remote_addr)
+            elif 'username' in credentials and 'password' in credentials:
+                session = client.get_session(
+                    credentials['username'], credentials['password'],
+                    remote_addr)
+        except ConnectionError as ex:
+            LOGGER.exception(ex)
+            if getattr(settings, 'CROWD_RAISE_COOKIE_CONNECTION_ERROR', True):
+                raise ex
             session = None
 
         if session:
